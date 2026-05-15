@@ -103,28 +103,67 @@ func (c *Client) UploadFile(localPath, remotePath string, progressFn func(int64,
 	if err != nil {
 		return err
 	}
+	totalSize := localInfo.Size()
 
 	remoteDir := filepath.Dir(remotePath)
 	if err := c.MkdirAll(remoteDir); err != nil {
 		return err
 	}
 
-	remoteFile, err := c.sftpClient.Create(remotePath)
+	tempPath := remotePath + ".uploading"
+	lockPath := remotePath + ".lock"
+
+	if c.FileExists(lockPath) {
+		return fmt.Errorf("another upload is in progress for this file, lock file exists: %s", lockPath)
+	}
+
+	lockFile, err := c.sftpClient.Create(lockPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create lock file: %w", err)
+	}
+	lockFile.Close()
+	defer func() {
+		c.sftpClient.Remove(lockPath)
+	}()
+
+	var uploaded int64
+	var remoteFile *sftp.File
+
+	if c.FileExists(tempPath) {
+		tempInfo, err := c.sftpClient.Stat(tempPath)
+		if err == nil {
+			uploaded = tempInfo.Size()
+			if uploaded > totalSize {
+				uploaded = 0
+				c.sftpClient.Remove(tempPath)
+			}
+		}
+	}
+
+	if uploaded > 0 {
+		remoteFile, err = c.sftpClient.OpenFile(tempPath, os.O_WRONLY|os.O_APPEND)
+		if err != nil {
+			return fmt.Errorf("failed to open temp file for append: %w", err)
+		}
+		if _, err := localFile.Seek(uploaded, io.SeekStart); err != nil {
+			remoteFile.Close()
+			return fmt.Errorf("failed to seek local file: %w", err)
+		}
+	} else {
+		remoteFile, err = c.sftpClient.Create(tempPath)
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
 	}
 	defer remoteFile.Close()
 
-	totalSize := localInfo.Size()
-	var uploaded int64
-	buf := make([]byte, 32*1024)
-
+	buf := make([]byte, 128*1024)
 	for {
 		n, err := localFile.Read(buf)
 		if n > 0 {
 			nw, err := remoteFile.Write(buf[:n])
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to write to remote file: %w", err)
 			}
 			uploaded += int64(nw)
 			if progressFn != nil {
@@ -135,8 +174,22 @@ func (c *Client) UploadFile(localPath, remotePath string, progressFn func(int64,
 			break
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read local file: %w", err)
 		}
+	}
+
+	if err := remoteFile.Close(); err != nil {
+		return fmt.Errorf("failed to close remote file: %w", err)
+	}
+
+	if c.FileExists(remotePath) {
+		if err := c.sftpClient.Remove(remotePath); err != nil {
+			return fmt.Errorf("failed to remove existing file: %w", err)
+		}
+	}
+
+	if err := c.sftpClient.Rename(tempPath, remotePath); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
 	return nil

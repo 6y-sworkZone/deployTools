@@ -55,15 +55,19 @@ type ProjectGroup struct {
 }
 
 type DeployHistory struct {
-	ID         string    `json:"id" yaml:"id"`
-	GroupID    string    `json:"group_id,omitempty" yaml:"group_id,omitempty"`
-	ProjectID  string    `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	ServerID   string    `json:"server_id" yaml:"server_id"`
-	Status     string    `json:"status" yaml:"status"`
-	StartTime  time.Time `json:"start_time" yaml:"start_time"`
-	EndTime    time.Time `json:"end_time,omitempty" yaml:"end_time,omitempty"`
-	LogFile    string    `json:"log_file,omitempty" yaml:"log_file,omitempty"`
-	ErrorMsg   string    `json:"error_msg,omitempty" yaml:"error_msg,omitempty"`
+	ID             string    `json:"id" yaml:"id"`
+	GroupID        string    `json:"group_id,omitempty" yaml:"group_id,omitempty"`
+	ProjectID      string    `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	ServerID       string    `json:"server_id" yaml:"server_id"`
+	Status         string    `json:"status" yaml:"status"`
+	StartTime      time.Time `json:"start_time" yaml:"start_time"`
+	EndTime        time.Time `json:"end_time,omitempty" yaml:"end_time,omitempty"`
+	LogFile        string    `json:"log_file,omitempty" yaml:"log_file,omitempty"`
+	ErrorMsg       string    `json:"error_msg,omitempty" yaml:"error_msg,omitempty"`
+	BackupPath     string    `json:"backup_path,omitempty" yaml:"backup_path,omitempty"`
+	RemotePath     string    `json:"remote_path,omitempty" yaml:"remote_path,omitempty"`
+	ProjectName    string    `json:"project_name,omitempty" yaml:"project_name,omitempty"`
+	IsRollback     bool      `json:"is_rollback,omitempty" yaml:"is_rollback,omitempty"`
 }
 
 type BackupConfig struct {

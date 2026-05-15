@@ -45,6 +45,10 @@ func main() {
 	rootCmd.AddCommand(NewGroupCmd())
 	rootCmd.AddCommand(NewDeployCmd())
 	rootCmd.AddCommand(NewListCmd())
+	rootCmd.AddCommand(NewHistoryCmd())
+	rootCmd.AddCommand(NewRollbackCmd())
+	rootCmd.AddCommand(NewConfigCmd())
+	rootCmd.AddCommand(NewLogsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

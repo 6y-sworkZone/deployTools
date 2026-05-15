@@ -245,3 +245,47 @@ func (cm *ConfigManager) UpdateDeployHistory(id string, history DeployHistory) e
 	}
 	return fmt.Errorf("history not found: %s", id)
 }
+
+func (cm *ConfigManager) GetDeployHistory(id string) *DeployHistory {
+	for _, h := range cm.config.History {
+		if h.ID == id {
+			return &h
+		}
+	}
+	return nil
+}
+
+func (cm *ConfigManager) GetAllDeployHistory() []DeployHistory {
+	return cm.config.History
+}
+
+func (cm *ConfigManager) GetDeployHistoryByProject(projectID string) []DeployHistory {
+	var result []DeployHistory
+	for _, h := range cm.config.History {
+		if h.ProjectID == projectID {
+			result = append(result, h)
+		}
+	}
+	return result
+}
+
+func (cm *ConfigManager) GetDeployHistoryByServer(serverID string) []DeployHistory {
+	var result []DeployHistory
+	for _, h := range cm.config.History {
+		if h.ServerID == serverID {
+			result = append(result, h)
+		}
+	}
+	return result
+}
+
+func (cm *ConfigManager) GetDeployHistoryByTimeRange(start, end time.Time) []DeployHistory {
+	var result []DeployHistory
+	for _, h := range cm.config.History {
+		if (h.StartTime.After(start) || h.StartTime.Equal(start)) &&
+			(h.StartTime.Before(end) || h.StartTime.Equal(end)) {
+			result = append(result, h)
+		}
+	}
+	return result
+}

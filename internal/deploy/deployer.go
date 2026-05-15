@@ -39,6 +39,7 @@ type Deployer struct {
 	client         *ssh.Client
 	files          []FileInfo
 	historyID      string
+	backupPath     string
 	configManager  *config.ConfigManager
 	progressCb     ProgressCallback
 	backupEnabled  bool
@@ -50,6 +51,7 @@ func NewDeployer(project config.Project, server config.Server, cm *config.Config
 		server:        server,
 		configManager: cm,
 		backupEnabled: backupEnabled,
+		files:         []FileInfo{},
 	}
 }
 
@@ -126,11 +128,11 @@ func (d *Deployer) connect() error {
 }
 
 func (d *Deployer) createBackup() error {
-	backupPath := fmt.Sprintf("%s/backup_%s", d.configManager.GetConfig().Backup.RemotePath, time.Now().Format("20060102_150405"))
-	if err := d.client.MkdirAll(backupPath); err != nil {
+	d.backupPath = fmt.Sprintf("%s/backup_%s", d.configManager.GetConfig().Backup.RemotePath, time.Now().Format("20060102_150405"))
+	if err := d.client.MkdirAll(d.backupPath); err != nil {
 		return err
 	}
-	_, err := d.client.RunCommand(fmt.Sprintf("cp -r %s/* %s/ 2>/dev/null || true", d.project.RemotePath, backupPath))
+	_, err := d.client.RunCommand(fmt.Sprintf("cp -r %s/* %s/ 2>/dev/null || true", d.project.RemotePath, d.backupPath))
 	return err
 }
 
@@ -294,10 +296,13 @@ func (d *Deployer) updateHistory(status DeployStatus, errorMsg string) {
 	}
 
 	history := config.DeployHistory{
-		EndTime: time.Now(),
-		Status:  string(status),
-		ErrorMsg: errorMsg,
-		LogFile:  utils.DefaultLogger.GetLogFilePath(),
+		EndTime:    time.Now(),
+		Status:     string(status),
+		ErrorMsg:   errorMsg,
+		LogFile:    utils.DefaultLogger.GetLogFilePath(),
+		BackupPath: d.backupPath,
+		RemotePath: d.project.RemotePath,
+		ProjectName: d.project.Name,
 	}
 
 	if err := d.configManager.UpdateDeployHistory(d.historyID, history); err != nil {
@@ -307,4 +312,58 @@ func (d *Deployer) updateHistory(status DeployStatus, errorMsg string) {
 
 func (d *Deployer) GetFiles() []FileInfo {
 	return d.files
+}
+
+func (d *Deployer) Rollback(backupPath string) error {
+	history := config.DeployHistory{
+		ProjectID: d.project.ID,
+		ServerID:  d.server.ID,
+		Status:    string(StatusRunning),
+		IsRollback: true,
+	}
+	history, err := d.configManager.AddDeployHistory(history)
+	if err != nil {
+		utils.Warn("Failed to create rollback history: %v", err)
+	}
+	d.historyID = history.ID
+
+	startTime := time.Now()
+	utils.Info("Starting rollback of project '%s' from backup '%s'", d.project.Name, backupPath)
+
+	if err := d.connect(); err != nil {
+		d.updateHistory(StatusFailed, err.Error())
+		return err
+	}
+	defer d.client.Close()
+
+	d.reportProgress(10, 100, "Removing current deployment...")
+	if err := d.client.RemoveDirectory(d.project.RemotePath); err != nil {
+		d.updateHistory(StatusFailed, err.Error())
+		return fmt.Errorf("failed to remove current deployment: %w", err)
+	}
+
+	d.reportProgress(40, 100, "Restoring from backup...")
+	if err := d.client.MkdirAll(d.project.RemotePath); err != nil {
+		d.updateHistory(StatusFailed, err.Error())
+		return fmt.Errorf("failed to create remote directory: %w", err)
+	}
+
+	_, err = d.client.RunCommand(fmt.Sprintf("cp -r %s/* %s/", backupPath, d.project.RemotePath))
+	if err != nil {
+		d.updateHistory(StatusFailed, err.Error())
+		return fmt.Errorf("failed to restore from backup: %w", err)
+	}
+
+	if d.project.PostScript != "" {
+		d.reportProgress(90, 100, "Running post-deploy script...")
+		if err := d.runPostScript(); err != nil {
+			utils.Warn("Post-deploy script failed: %v", err)
+		}
+	}
+
+	duration := time.Since(startTime)
+	utils.Info("Rollback completed successfully in %v", duration)
+	d.backupPath = backupPath
+	d.updateHistory(StatusSuccess, "")
+	return nil
 }
